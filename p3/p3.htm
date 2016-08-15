@@ -1,0 +1,260 @@
+
+<!-- saved from url=(0047)https://users.cs.duke.edu/~chase/cps310/p3.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"></head><body><h1>Project 3: Raft Consensus</h1>
+
+
+<br>
+<h3>Overview</h3> 
+
+
+The goal of Project 3 is to implement two parts of the Raft consensus
+protocol. You can find a detailed discussion of Raft in this
+<a href="http://ramcloud.stanford.edu/raft.pdf">paper</a> and in the lecture
+slides. In particular, Figure 2 in the Raft paper will be an invaluable guide
+to completing Project 3.
+<br><br>
+
+In the first part of the project, you will implement the leader-election
+protocol. In the second part, you will implement the log-repair protocol. Note
+that you do not have to handle new user requests. All actions are present in the
+set of initial server logs.
+<br><br>
+
+<h3>Background and setup</h3>
+
+The code for Project 3 is available in the course git repo. 
+In the p3 directory, will find three subdirectories. The bin directory contains
+two scripts, including runtest.sh, which can be used to run a Raft
+simulation. You should also dump your .class files into the bin directory (the
+Makefile will do this for you).
+<br><br>
+
+The serverlogs directory is where server instances will look for their
+persistent state. This include the action log as well as some additional
+configuration state.
+<br><br>
+
+The src directory contains all the Java source you will need for the project. 
+<br><br>
+
+The tests directory contains testing scripts. There is a simple sampletest.txt
+there that can be used in combination with bin/runtest.sh.
+<br><br>
+
+Simulated servers run in separate processes and communicate with each other via
+the rmiregistry. The runtest.sh script will do this for you. To implement
+leader election and log replication, you will need to modify three java classes
+in the edu.duke.raft package: CandidateMode.java, FollowerMode.java, and
+LeaderMode.java. Limit your code changes to these files. You can only submit
+these three files.
+<br><br>
+
+A server must handle three kinds of inputs: vote requests from other servers,
+append-entry requests from other servers, and a timeout started by the server
+itself. How you handle these inputs will depend on whether the server is acting
+as a candidate, follower, or leader.
+<br><br>
+
+To simplify your implementation, we provide the RaftResponses class for storing
+RPC responses from other servers. RPC requests can be made using the
+remoteRequestVote and remoteAppendEntries methods in RaftMode. Note that these
+"remote" methods have no return value. This is because your code can only access
+responses to RPCs via the RaftResponse class. Responses are collected for a
+given term. The term must be set to begin a collection period, and incoming
+responses that do not match the internal term will be ignored. You will need to
+be careful to synchronize accesses to RaftResponses.
+<br><br>
+
+To schedule a timer, you can use the protected final Timer scheduleTimer(long
+millis, int timerID) method that all RaftMode implementations inherit. This
+method will create a thread that will execute the public void handleTimeout(long
+timerID) function in your RaftMode class. If you do not want the handler to
+execute (e.g., because a heartbeat message arrived from the leader), then you
+can cancel the Timer using its public void cancel() method.
+<br><br>
+
+Servers must maintain three pieces of persistent state: the current term, the
+candidate the server voted for in the current term (or zero, if none), and the
+action log. We provide the RaftConfig and RaftLog classes for ensuring that this
+state is written to disk. You can get and set this state through the class
+methods, and both implementations will ensure that updates are synchronously
+written to disk before returning. These values are stored in the logs in the
+serverlogs directory and are re-read whenever a server re-starts.
+<br><br>
+
+You are also responsible for making sure that the server correctly switches
+between modes. The correct way to change the server's mode is via the method
+public static void RaftServerImpl.setMode(RaftMode mode). In StartServer, you
+can see that all servers begin as followers.
+<br><br>
+
+<h3>Task 1: Leader election</h3>
+
+The first part of Project 3 is to implement the leader-election protocol
+described in the lecture slides and the Raft paper.
+<br><br>
+
+Every server starts as a follower. One of a follower's main jobs is to detect
+when the current leader has failed. Followers detect failure by waiting for a
+period of time until they have not received any messages. You will implement
+this logic by setting timers to trigger after a period of time. The time to wait
+before deciding that the leader has failed is called the <i>election timeout</i>
+and servers should set their timers to a random value between 150ms and 300ms
+(see RaftMode.ELECTION_TIMEOUT_MIN and RaftMode.ELECTION_TIMEOUT_MAX).
+<br><br>
+
+When testing your implementation, you will likely find it useful to override the
+default randomized election-timeouts. You can do this by adding an
+"ELECTION_TIMEOUT_OVERRIDE" value to your server's config file. When this is
+set, your server must wait for <b>exactly</b> this much time before calling for
+a new election. For example, by setting one server's timeout override
+to a value that is much
+smaller than the other servers, you can ensure that this server is more likely
+to become the leader.
+<br><br>
+
+If a follower receives no communication after an election-timeout period, then
+it assumes that the leader has failed, and it transitions to candidate
+mode. Followers also vote in elections, and your code should implement the
+refined election criterion discussed in class (i.e., a server should only vote
+for another if it has a more up-to-date log than its own).
+<br><br>
+
+When a server first becomes a candidate, it increments its term, and sends a
+requestVotes RPC to all other servers. These RPCs are sent in parallel and
+responses will arrive at different times. The threads responsible for making
+each RPC will store a server's response in the RaftResponses class. Your
+candidate code should set a timer to periodically check if a majority of servers
+voted for it. If a server wins a majority, then it should transition to leader
+mode. While polling for election results via a timer is not the most efficient
+approach, it makes your code simpler.
+<br><br>
+
+Of course, elections should not last forever, and if a candidate cannot collect
+a majority of votes before an election-timeout period of time, then the
+candidate should increment its term and call another election. On the other
+hand, if a candidate receives a heartbeat message from a server with a term that
+is equal to or larger than its own, then it should cancel its election and
+transition to follower mode.
+<br><br>
+
+A leader must ensure that the rest of the cluster knows it is up and running. It
+does this by sending out periodic heartbeat messages to the followers. Heartbeat
+messages are empty append-entry requests, and should be sent often enough to
+prevent a follower's election timer from triggering. This period is called the
+heartbeat interval, and it should be set to half of the minimum possible
+election timeout (i.e., 75ms). See RaftMode.HEARTBEAT_INTERVAL. A server remains
+in leader mode until it fails or learns that another server has a higher
+term. If a server discovers someone with a higher term, the server changes to
+follower mode.
+<br><br>
+
+Handling timers is critical for correctly implementing the election
+protocol. Your server may have one or more timers set at any point in time. When
+an input must be processed (whether a network message or a timer firing), you
+may need to cancel outstanding timers and/or set up new ones. If you find that
+you need to have more than one timer set at the same time, use the timerID
+parameter to figure out which timer fired in handleTimeout.
+<br><br>
+
+Whenever a server switches modes, it should print a message to stdout. For
+example, if server one becomes a candidate for term five, it should print,
+"S1.5: switched to candidate mode.", to stdout. If server one becomes the leader
+for term five, it should print, "S1.5: switched to leader mode."
+<br><br>
+
+My advice is to implement leader election using the simple criterion first
+(i.e., followers vote for the candidate, regardless of their log's state), and
+implement the refined criterion in Task 2.
+<br><br>
+
+<h3>Task 2: Log repair</h3>
+
+Once your servers have chosen a leader, you must implement the log repair
+protocol described in the lecture slides and the Raft paper. The leader's job is
+to figure out the earliest log entry that it has in common with each follower,
+and then roll the followers forward until their logs are identical to the
+leader's. Remember that in Raft log entries only flow in one direction: from the
+leader to the followers.
+<br><br>
+
+Logs are stored in plaintext files. The runtest.sh script reads and writes logs
+stored in the serverlogs directory. Each log entry is a stored as two integers
+on a single line. The first integer is the term and the second is the
+action. For the purposes of implementing Raft, the meaning of the action
+integers is irrelevant.
+<br><br>
+
+As followers catch up, you can monitor the state of their logs by looking at the
+log files. For a sufficiently long simulation and sufficiently infrequent
+failures, all server logs should converge to the same state by the end of a
+simulation. Note that there is no guarantee that logs will converge, since
+exactly the wrong failure at a critical moment can prevent an election from
+happening or a log entry from propagating.  However, all servers will
+agree on a stable prefix of their logs, and the length of this prefix
+advances monotonically on all servers as they run: this is consensus.
+<br><br>
+
+<h3>Testing</h3>
+
+Testing your Raft implementation will be a bit tricky due to the asynchronous
+nature of handling timeouts. However, runtest.sh is meant to help you
+debug. runtest.sh can read a test file from the tests directory like
+sampletest.txt. A test file will allow you to start servers, fail servers, pause
+servers, resume servers, and sleep the testing script (note that sleep does not
+cause the servers themselves to sleep). As in Project 1, you should write a
+suite of simple test cases to make sure that your implementation is correct. As
+mentioned earlier, overriding the election timeout for a server in its .config
+file will also be very useful for testing.
+<br><br>
+
+runtest.sh appends the output of a test run to the file
+serverlogs/server.output. The command below (run from directory p3) will run the
+sample test for 10 seconds. 
+<br><br>
+
+<font face="Courier">
+<b>
+<pre>$&gt; bin/runtest.sh 10 tests/sampletest.txt
+</pre>
+</b>
+</font>
+<br>
+
+At the top of a test file, you must set the variable NUM_SERVERS, which
+indicates how many servers will run. Each server will be assigned a unique
+numeric identifier, between 1 and NUM_SERVERS. You need to make sure that the
+NUM_SERVERS field in each server's .config file matches the NUM_SERVERS
+specified in the test file.
+
+<br><br>
+
+Look through sampletest.txt to see how to manipulate the events in your test.
+In addition to running, pausing, and failing servers, you can also manipulate
+servers' initial states by modifying the .log and .config files in the
+serverlogs directory. runtest.sh will look for Server N's log and config
+information in serverlogs/N.log and serverlogs/N.config, respectfully. If
+runtest.sh cannot find the right .log and .config files, it will create them by
+copying serverlogs/init.config and serverlogs/init.log into serverlogs/N.config
+and serverlogs/N.log, respectively, before starting the server.
+
+<br><br>
+
+<h3>Submitting</h3>
+
+Please submit your code through the course website. As before, the auto-grader will grade the master branch of your repo (i.e., CandidateMode.java, FollowerMode.java, and LeaderMode.java) and email your results. You are entitled to one submission per day (using the AG's clock) and three bonus submissions.
+
+<br><br>
+
+Please be patient while waiting for your feedback. Grading Project 3 is slow, so don't be surprised if your feedback arrives a half hour (or more) after you submit. Here are some hints for the test cases:
+
+<br><br>
+<ul>
+<li> Tests 0 - 5 only test leader election.
+</li><li> Tests 6 - 14 test leader election and log reconciliation
+</li><li> Servers must have the same log by the end of the test. You are given a reasonable amount of time for this to happen.
+</li><li> Servers must elect a leader at least once during a test. Again, you are given more than enough time for this to happen.
+</li><li> The AG performs a number of correctness checks on your output, such as whether two servers enter leader mode in the same term.
+</li><li> The AG runs your code multiple times for each test, and your code must produce correct output on each run to pass the test.
+</li></ul>
+</body></html>

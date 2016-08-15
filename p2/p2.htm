@@ -1,0 +1,107 @@
+
+<!-- saved from url=(0047)https://users.cs.duke.edu/~chase/cps310/p2.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=windows-1252"></head><body><h1>Project 2: Hack into a server</h1>
+
+<b>Due</b>: March 28<br>
+
+<ul>
+<li>See the <a href="https://lpc.cs.duke.edu/compsci310/projects/p2.php">NetID-protected
+version of this spec</a> for the <b>address/URL of your group
+server</b>.
+The port on which your group's server is waiting for
+connections is listed there. Please note that Chrome may not connect to the
+servers correctly.
+</li><li> <a href="https://users.cs.duke.edu/~chase/cps310/shellcode.html">Suggested shellcode for P2</a>
+  </li></ul>
+
+<h3>Overview</h3>
+
+This project will help you understand call stack vulnerabilities and debuggers
+like the GNU Debugger (GDB).<br><br>
+
+The objective of this project is to compromise a Ubuntu Linux machine running a
+vulnerable process. You can access a full copy of the process C source code in
+the course git repo. You should download the source, compile it, and analyze the
+program's behavior. <br><br>
+
+You will use a <i>shellcode</i> to compromise the server, which is described in
+the links below. Once you have compromised your server, you should modify the
+files hosted by the server as proof. As you start trying to compromise your
+server, it will likely seg fault. However, servers will restart after they crash. In
+particular, you will need to use a reverse shellcode so that you can remotely
+send commands to the server you take over.<br><br>
+
+There are five stages to completing the project<br><br>
+
+1. Find the vulnerability in webserver.c. You can grab this file by updating
+your git repo.<br><br>
+
+2. Use gdb to identify where the relevant variables are stored in
+memory.<br><br>
+
+3. Construct a request string that will exploit the vulnerability by
+overwriting variables stored on the stack.<br><br>
+
+4. Pwn a local webserver process.<br><br>
+
+5. Pwn a remote webserver process and create a new file or modify
+  index.html. This may take many attempts (but not prohibitively many) since you
+  cannot be exactly sure where the remote server's stack is located.<br><br>
+
+
+To submit your project, push the following to your git repo: all files
+(including source) used in your exploit, a short explanation of your method of
+attack, and a review of the project as a whole.<br><br>
+
+<h3>Tips</h3>
+
+You can use "netcat" (i.e., the nc command) to send messages to your server. For
+example, to request the file index.html from your server using HTTP, you could
+type in <font face="courier">echo -e "GET /index.html HTTP" | nc
+YOUR_SERVER YOUR_PORT</font>, where <font face="courier">YOUR_SERVER</font> is replaced with your server's hostname and <font face="courier">YOUR_PORT</font>
+is replaced with your server's port.<br><br>
+
+Note that when using gdb to inspect your running process, you can alter the
+location of variables relative to running the process without debugging. Please
+see <a href="http://stackoverflow.com/questions/17775186/buffer-overflow-works-in-gdb-but-not-without-it">this
+stackoverflow article</a> with more info and a way to make sure that the
+execution environment is the same with and without debugging.<br><br>
+
+Take the following steps when testing a local version of your shellcode to
+reduce the number of seg faults:<br><br>
+
+1. Make sure randomized virtual addressing is turned off. You can do this by
+first starting a shell with the command <font face="courier">setarch `uname -m` -R
+/bin/bash</font> . Then run your server within that shell.<br><br>
+
+2. Compile using the proper flags. For example, to compile shellcode.c,
+use <font face="courier">gcc -m32 -z execstack -fno-stack-protector shellcode.c -o
+shellcode</font>.<br><br>
+
+gdb outputs assembly in the AT&amp;T assembly syntax, which means mov %eax, %ebx
+will copy the value of eax into ebx. The other way round is called the Intel
+syntax. Use gdb to find the stack address for the server.<br><br>
+
+Make sure that you can reliably exploit a server process running on your local
+machine before trying to exploit your remote server.<br><br>
+
+Please post to Piazza with any difficulties you are having. <br><br>
+
+The instructor and TA can post tips that may point you and others in the right
+direction.<br><br>
+
+<h3>Resources</h3>
+
+Read the document
+<a href="http://inst.eecs.berkeley.edu/~cs161/fa08/papers/stack_smashing.pdf">"Smashing
+the Stack for Fun and Profit"</a> for an introduction to call stack
+vulnerabilities.<br><br>
+
+Look at
+<a href="http://www.vividmachines.com/shellcode/shellcode.html">"Shellcoding for
+Linux and Windows Tutorial"</a> for shellcode samples for Linux. Past students
+have found this to be extremely useful.<br><br>
+
+<a href="http://shell-storm.org/shellcode/">"Shell storm"</a> is a great place to
+find shell codes.
+</body></html>

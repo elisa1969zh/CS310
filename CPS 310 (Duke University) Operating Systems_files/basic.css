@@ -1,0 +1,123 @@
+
+html, body {
+        background-color: #ffffff; /* ivory */
+        margin: 20px;
+        color: #000033;
+}
+
+a:link
+{
+	text-decoration: underline;
+	color: #000099;
+}
+
+a:visited
+{
+	color: #000066;
+}
+
+a:hover, a:active
+{
+	color: #0000CC;
+}
+
+table.header
+{
+	width: 90%;
+	margin: 0;
+}
+
+td.header-cell
+{
+        font-family: lucida, serif;
+        font-size: smaller;
+        color: #000066;
+        text-align: center;
+	
+}
+
+td.button {
+        font-family: Geneva, Arial, Helvetica, san-serif;
+        font-size: small;
+        font-weight: bold;
+        color: #000066;
+        background-color: #CCCCCC;
+        text-align: center;
+}
+
+p.messagebox {
+	margin-left: 60px;
+	margin-right: 70px;
+        font-size: small;
+        background-color: #CCCCCC;
+	border: 3px double;
+	border-color: #000066;
+}
+
+table.messagebox {
+	margin-left: 60px;
+	margin-right: 100px;
+        font-size: small;
+        background-color: #CCCCCC;
+	border: 3px double;
+	border-color: #000066;
+}
+
+table.table {
+	border: 1px solid;
+	border-color: #000066;
+	width: 80%;
+	margin: 20px;
+}
+
+td.table {
+	border: 1px solid;
+	border-color: #000066;
+}
+
+td.calendar-date {
+	border: 1px solid;
+	border-color: #000066;
+	width: 8%;
+	text-weight: bold;
+}
+
+td.table-header {
+        background-color: #CCCCCC;
+        color: #000066;
+        text-align: center;
+	font-weight: bold;
+	border: 1px solid;
+	border-color: #000066;
+}
+
+td.ppt-icon {
+	border: 1px solid;
+	border-color: #000066;
+	width: 6%;
+        text-align: center;
+}
+
+img.ppt-icon {
+	width: 20px;
+	height: 20px;
+	border: none;
+}
+
+td.pdf-icon {
+	border: 1px solid;
+	border-color: #000066;
+	width: 7%;
+        text-align: center;
+}
+
+img.pdf-icon {
+	width: 30px;
+	height: 30px;
+	border: none;
+}
+
+div.topic {
+	font-weight: bold;
+}
+
