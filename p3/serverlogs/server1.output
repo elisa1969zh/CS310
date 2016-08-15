@@ -1,0 +1,45 @@
+TIME_TO_SIMULATE=5
+S3.1: Log { (1 1) }
+S1.1: Log { (1 1)  (4 1)  (4 1)  (4 1)  (5 1) }
+S2.1: Log { (1 1)  (6 1)  (6 1)  (6 1)  (6 1)  (7 1) }
+S3.1: switched to follower mode.
+S1.1: switched to follower mode.
+S2.1: switched to follower mode.
+S3.2: switched to candidate mode.
+S1.3: switched to candidate mode.
+S2.3: switched to candidate mode.
+S1.3: switched to follower mode.
+S3.3: switched to follower mode.
+S2.4: switched to leader mode.
+S3.5: switched to candidate mode.
+S2.5: switched to follower mode.
+S3.5: switched to leader mode.
+S2.6: switched to candidate mode.
+S2.6: requestVote for S3 failed.
+S2.6: switched to leader mode.
+S2.6: appendEntries for S3 failed.
+S2.6: appendEntries for S3 failed.
+S2.6: appendEntries for S3 failed.
+S2.6: appendEntries for S3 failed.
+S2.6: appendEntries for S3 failed.
+S1.7: requestVote for S2 failed.
+S1.7: switched to candidate mode.
+S1.7: requestVote for S3 failed.
+S1.7: requestVote for S2 failed.
+S1.7: requestVote for S3 failed.
+S1.7: requestVote for S3 failed.
+S1.7: requestVote for S2 failed.
+S2.6: Log { (1 1)  (6 1)  (6 1)  (6 1)  (6 1)  (7 1) }
+S3.5: Log { (1 1)  (6 1)  (6 1)  (6 1)  (6 1)  (7 1) }
+S1.7: requestVote for S3 failed.
+S1.7: requestVote for S2 failed.
+S1.7: requestVote for S3 failed.
+S1.7: requestVote for S2 failed.
+S2.6: switched to follower mode.
+S1.7: requestVote for S2 failed.
+S1.7: requestVote for S3 failed.S3.5: switched to follower mode.
+
+S1.7: requestVote for S3 failed.
+S1.7: requestVote for S2 failed.
+S1.7: requestVote for S3 failed.
+S1.7: switched to leader mode.

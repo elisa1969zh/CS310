@@ -1,0 +1,223 @@
+FollowerMode:
+	// 1 timer: checkFailureTimer 
+	go () {
+		Start checkFailureTimer;
+	}
+
+	requestVote (int candidateTerm, int candidateID, int lastLogIndex, int lastLogTerm) {
+		CASE 1: candidate's Term < my Term {
+			Vote NO;
+		}
+
+		CASE 2: candidate's Term > my Term:
+			CASE 2A: if candidate's lastLogTerm >= my lastLogTerm (i.e. candidate's log as updated as my log) {
+				setCurrentTerm(candidate's Term, candidateID);
+				restart timer;
+				Vote YES;
+			}
+
+			CASE 2B: if candidate's lastLogTerm < my lastLogTerm:
+				setCurrentTerm(candidate's Term, 0);
+				restart timer;
+				Vote NO;
+
+		CASE 3: candidate's Term == my Term:
+			CASE 3A: I already voted for you OR I have not voted for anybody:
+				if your log is as updated as my log:
+					restart timer;
+					Vote YES;
+				if my log is more updated than your log:
+					restart timer;
+					Vote NO;
+			CASE 3B: if I already voted for someone else:
+				restart timer;
+				Vote NO;
+	}
+
+	appendEntries (int leaderTerm, int leaderID, int prevLogIndex, int prevLogTerm, Entry[] entries, int leaderCommit) {
+		CASE 1: if leader's Term < my term: 
+			Respond NO;
+
+		CASE 2: if leader's Term > my term:
+			update my term to leader's term
+
+		if I don't have an Entry at previous Log Index OR the Entry's term is not Leader's previous Log Term:
+			restart timer;
+			Respond NO;
+
+		else (i.e. my previous Entry's term is Leader's previous Log Term):
+			insert entries;
+
+		// fix commitIndex:
+		if leaderCommit > commitIndex: 
+			set commitIndex to min (leaderCommit, my last log index)
+
+		if entries is an empty array, this means the leader's has no entries to append:
+			Respond NO;
+		else:
+			Respond YES;
+	}
+
+	handleTimeout:
+		cancel timer and transition into Candidate Mode
+
+LeaderMode:
+	Initiate int nextIndex[num of servers];
+	Initiate appendEntriesRPC timer;
+
+	send Append Entries RPC () {
+		put everything entry after nextIndex[i] - 1 in an array called entries
+		remoteAppendEntries(i, mConfig.getCurrentTerm(), mID, nextIndex[i] -1, mLog.getEntry(nextIndex[i] -1).term, entries, mCommitIndex);
+	}
+
+	go () {
+		set all elements in nextIndex to my Last Index + 1;
+		send Append Entries RPC ();
+		start timer;
+	}
+
+	requestVote (int candidateTerm, int candidateID, int lastLogIndex, int lastLogTerm) {
+		CASE 1: if candidateTerm < my Term:
+			Vote NO;
+		CASE 2: if candidateTerm > my Term:
+			CASE A: if candidate's last log term >=  my last log term:
+				mConfig.setCurrentTerm(candidateTerm, candidateID);
+				cancel timer;
+				become a follower;
+				Vote YES;
+
+			CASE B: if candidate's last log term < my last log term:
+				mConfig.setCurrentTerm(candidateTerm, 0);
+				cancel timer;
+				become a follower;
+				Vote NO;
+
+		CASE 3: if candidateTerm == my Term:
+			// something is wrong, this should never happen, since leader is updating follower's log all the time, but if it happens
+			
+
+			CASE A: if candidate's last log term >= my last log term:
+				if I have voted for you or I haven't voted for anybody:
+					cancel timer;
+					become a follower;
+					Vote YES;
+				
+				if I have already voted for someone else:
+					cancel timer;
+					become a follower;
+					Vote NO;
+
+			CASE B: if candidate's last log term < my last log term:
+				Vote NO;				
+
+	}
+
+	AppendEntries (int leaderTerm, int leaderID, int prevLogIndex, int prevLogTerm, Entry[] entries, int leaderCommit) {
+		if leaderTerm > my Term:
+            mConfig.setCurrentTerm(leaderTerm, 0);
+            cancel timer;
+            become a follower;
+            Respond IGNORE (-1, try me again later);
+
+        if leader Term < my Term:
+        	Respond NO;
+
+        if this leader is myself:
+			Respond IGNORE (-1, try me again later);        	
+        else:
+        	// this should never happen! DOUBLE LEADER! Something is wrong.
+        	Respond NO;
+	}
+
+	handleTimeout() {
+		Get AppendEntries Responses and store them in the array followerResponses
+
+		For every server's response:
+			if response > my term:
+				setCurrentTerm(response, 0);
+				cancel timer;
+				Become a follower;
+				return;
+
+			response is YES:
+				increment nextIndex[Server Number]
+			response is NO:
+				decrement nextIndex[Server Number]
+			response is IGNORE:
+				try this index again!
+
+		send Append Entries RPC ();		
+	}
+
+CandidateMode:
+	// 2 timers: checkVoteTimer and callAnotherElectionTimer
+	go () {
+		setCurrentTerm (currentTerm + 1, myself);
+		initiate both timers;
+		set RaftResponses term to current term;
+		request everyone's vote;
+	}
+
+	requestVote (int candidateTerm, int candidateID, int lastLogIndex, int lastLogTerm) {
+		CASE 1: if this candidate is myself:
+			Vote YES;
+
+		CASE 2: if candidate's term < my term:
+			Vote NO;
+
+		CASE 3: if candidate's term > my term:
+			
+			CASE A: if candidate's last log term >= mine:
+                mConfig.setCurrentTerm(candidateTerm, candidateID);
+				cancel both timers
+				become a follower
+				Vote NO, because I already voted for myself;
+
+			CASE B: if candidate's last log term < mine:
+                mConfig.setCurrentTerm(candidateTerm, 0);
+				cancel both timers
+				become a follower
+				Vote NO;
+
+		CASE 4: if candidate's term == my term:
+
+			CASE A: if candidate's last log term >= mine:
+				cancel both timers;
+				become a follower;
+				Vote NO, because I already voted for myself;
+
+			CASE B: if candidate's last log term < mine:
+				Vote NO;
+
+	}
+
+	appendEntries (int leaderTerm, int leaderID, int prevLogIndex, int prevLogTerm, Entry[] entries, int leaderCommit) {
+		CASE 1: if leader's term < my term:
+			RESPOND NO;
+
+		CASE 2: if leader's term >= my term:
+			setCurrentTerm(leader's term, leaderID);
+			cancel both timers;
+			become a follower;
+			respond IGNORE;
+
+	}
+
+	handleTimeout () {
+
+		For checkVoteTimer:
+			get all the votes from RaftResponses and count the number of YES's.
+			During this process, if any vote > my term:
+				mConfig.setCurrentTerm(vote, serverID);
+				cancel both timers;
+				become a follower;
+				return;
+
+			if I won majority vote, cancel both timers and become a leader;
+
+			if I didn't, restart checkVoteTimer and 
+
+		For electionTimeout:
+			cancel both timers and call go();
+	}
+
