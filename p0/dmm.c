@@ -51,315 +51,342 @@ static metadata_t *heap_start;
 static metadata_f *heap_end;
 
 bool heapIsCompletelyFull = false;
+bool dmalloc_init_called = false;
 
 void *dmalloc(size_t numbytes) {
-
+  printf("-----start of dmalloc-----\n");
+  size_t
+      currBlkSize = METADATA_T_ALIGNED + ALIGN(numbytes) + METADATA_F_ALIGNED;
   /* CHECK IF THERE'S STILL SPACE IN THE HEAP */
-  if (heapIsCompletelyFull) {
-    return NULL;
-  } else {
-    /* initialize through sbrk call first time */
-    if (freelist == NULL) {
-      if (!dmalloc_init())
-        return NULL;
-    }
-
-    assert(numbytes > 0);
-    /* determine size of requested block */
-    size_t
-        blockSize = METADATA_T_ALIGNED + ALIGN(numbytes) + METADATA_F_ALIGNED;
-    size_t tempBlockSize = blockSize;
-    freelist = findCorrectFreeList(blockSize);
-    /* find the appropriate pointer for splitting */
-    metadata_t *targetPointer;
-    metadata_t *candidatePointer;
-    candidatePointer = freelist;
-
-    while ((candidatePointer == NULL)
-        || (candidatePointer->size < ALIGN(numbytes))
-            && (candidatePointer->size != blockSize)) {
-      /* this block is too small */
-      if ((candidatePointer == NULL) || (candidatePointer->next == NULL)) {
-        if ((candidatePointer != NULL) && (freelist == freelist8192_)) {
-          /* last possible block doesn't match! No block is big enough */
-          return NULL;
-        } else {
-          tempBlockSize = tempBlockSize * 2;
-          freelist = findCorrectFreeList(tempBlockSize);
-          candidatePointer = freelist;
-        }
-      } else {
-        /* go to next free block */
-        candidatePointer = candidatePointer->next;
-      }
-    }
-
-    /* found the block! */
-    targetPointer = candidatePointer;
-
-    /* ------  splitting the target block --------- */
-
-    /* ------  CASE 1: the block is completely filled --------- */
-    if (targetPointer->size == blockSize) {
-      /* ------  CASE 1-A: the first free block is being filled --------- */
-      if (freelist == targetPointer) {
-        /* ------  CASE 1-A-A: this is NOT the last free block --------- */
-        if (freelist->next != NULL) {
-          freelist = freelist->next;
-          targetPointer->next = NULL;
-          freelist->prev = NULL;
-          assignCorrectFreeList(freelist, freelist);
-        }
-          /* ------  CASE 1-A-B: this is the last free block --------- */
-        else {
-          /* EVERYTIME THE HEAP IS COMPLETELY FILLED, FREELIST IS RETURN TO HEAP_START */
-          assignCorrectFreeList(freelist, NULL);
-        }
-      }
-        /* ------  CASE 1-B: it's NOT the first free block that's being filled --------- */
-      else {
-        /* ------  CASE 1-B-A: this IS THE LAST FREE BLOCK --------- */
-        if (targetPointer->next == NULL) {
-          targetPointer->prev->next = NULL;
-          targetPointer->prev = NULL;
-          targetPointer->next = NULL;
-        }
-          /* ------  CASE 1-B-B: this IS NOT THE LAST FREE BLOCK --------- */
-        else {
-          targetPointer->prev->next = targetPointer->next;
-          targetPointer->next->prev = targetPointer->prev;
-          targetPointer->next = NULL;
-          targetPointer->prev = NULL;
-        }
-      }
-    }
-      /* ------  CASE 2: the block is NOT completely filled --------- */
-    else {
-      printf("CASE 2\n");
-      /* create next block header */
-      metadata_t *header = (void *) targetPointer + blockSize;
-      /* set next block header */
-      header->size = targetPointer->size - blockSize;
-      metadata_t *targetfreelist = findCorrectFreeList(header->size);
-
-      if (targetfreelist == NULL) {
-        assignCorrectFreeList(header, header);
-        header->next = NULL;
-        header->prev = NULL;
-      } else {
-        while (targetfreelist->next != NULL && targetfreelist->next < header) {
-          targetfreelist = targetfreelist->next;
-        }
-
-        if (targetfreelist > header) {
-          header->next = targetfreelist;
-          header->prev = targetfreelist->prev;
-          if (header->prev != NULL) {
-            header->prev->next = header;
-          }
-          targetfreelist->prev = header;
-        } else {
-          if (targetfreelist->next != NULL) {
-            targetfreelist->next->prev = header;
-            header->next = targetfreelist->next;
-            targetfreelist->next = header;
-            header->prev = targetfreelist;
-          } else {
-            header->next = NULL;
-            targetfreelist->next = header;
-            header->prev = targetfreelist;
-          }
-
-        }
-      }
-
-      /* align pointers to next block header */
-      if (header->next != NULL) {
-        header->next->prev = header;
-      }
-
-      if (header->prev != NULL) {
-        header->prev->next = header;
-      }
-
-      /* set next block footer */
-      metadata_f
-          *nextFooter = (void *) header + header->size - METADATA_F_ALIGNED;
-      nextFooter->size = header->size;
-      /* create current block footer */
-      metadata_f *currentFooter = (void *) header - METADATA_F_ALIGNED;
-      /* set current block footer */
-      currentFooter->size = blockSize;
-      /* set current block header */
-      targetPointer->size = blockSize;
-      targetPointer->next = NULL;
-      targetPointer->prev = NULL;
-      /* update freelist if freelist's block becomes allocated */
-      freelist =
-          ((void *) freelist == (void *) targetPointer) ? header : freelist;
-    }
-
-    /* return the correct pointer address */
-    return (void *) targetPointer + METADATA_T_ALIGNED;
+  /* initialize through sbrk call first time */
+  if (!dmalloc_init_called) {
+    printf("dmalloc_init()...\n");
+    dmalloc_init_called = true;
+    if (!dmalloc_init())
+      return NULL;
   }
+
+  assert(numbytes > 0);
+
+  freelist = findCorrectFreeList(currBlkSize);
+  /* find the appropriate pointer for splitting */
+  metadata_t *currBlkHeader;
+  metadata_t *ptr;
+  ptr = freelist;
+
+  size_t tempBlkSize = currBlkSize;
+  while (ptr == NULL
+      || ptr->size < currBlkSize + METADATA_T_ALIGNED + METADATA_F_ALIGNED) {
+//      either the free list does not exist or this specific block is too small
+    if (ptr == NULL) {
+//        the free list does not exist
+      if (freelist == freelist8192_) {
+        printf("No block is big enough\n");
+        return NULL;
+      }
+      tempBlkSize = tempBlkSize * 2;
+      freelist = findCorrectFreeList(tempBlkSize);
+      ptr = freelist;
+    } else {
+//        this specific block is too small, go to next free block
+      printf("size:%zd < %zd\n", ptr->size, currBlkSize);
+      ptr = ptr->next;
+      if (ptr != NULL && ptr->next != NULL && ptr == ptr->next) {
+        printf("LOOP!\n");
+      }
+      if (ptr == NULL) {
+        if (freelist == freelist8192_) {
+          printf("last possible block doesn't match! No block is big enough\n");
+          return NULL;
+        }
+        /* the end of this free list, go to next free list */
+        tempBlkSize = tempBlkSize * 2;
+        freelist = findCorrectFreeList(tempBlkSize);
+        ptr = freelist;
+      }
+    }
+  }
+
+  /* found the block! */
+  currBlkHeader = ptr;
+  printf("FOUND THE FREELIST: %d and THE BLOCK: %d with SIZE: %d\n",
+         freelist,
+         ptr,
+         ptr->size);
+
+  /* ------  splitting the target block --------- */
+
+  /* ------  CASE 1: the block is completely filled --------- */
+  if (currBlkHeader->size == currBlkSize) {
+    /* ------  CASE 1-A: the first free block is being filled --------- */
+    if (freelist == currBlkHeader) {
+      /* ------  CASE 1-A-A: this is NOT the last free block --------- */
+      printf("CASE 1-A-A\n");
+      if (freelist->next != NULL) {
+        freelist = freelist->next;
+        currBlkHeader->next = NULL;
+        freelist->prev = NULL;
+        assignCorrectFreeList(freelist, freelist);
+      }
+        /* ------  CASE 1-A-B: this is the last free block --------- */
+      else {
+        /* EVERYTIME THE HEAP IS COMPLETELY FILLED, FREELIST IS RETURN TO HEAP_START */
+        printf("CASE 1-A-B\n");
+        assignCorrectFreeList(freelist, NULL);
+      }
+    }
+      /* ------  CASE 1-B: it's NOT the first free block that's being filled --------- */
+    else {
+      /* ------  CASE 1-B-A: this IS THE LAST FREE BLOCK --------- */
+      printf("CASE 1-B-A\n");
+      if (currBlkHeader->next == NULL) {
+        currBlkHeader->prev->next = NULL;
+        currBlkHeader->prev = NULL;
+        currBlkHeader->next = NULL;
+      }
+        /* ------  CASE 1-B-B: this IS NOT THE LAST FREE BLOCK --------- */
+      else {
+        printf("CASE 1-B-B\n");
+        currBlkHeader->prev->next = currBlkHeader->next;
+        currBlkHeader->next->prev = currBlkHeader->prev;
+        currBlkHeader->next = NULL;
+        currBlkHeader->prev = NULL;
+      }
+    }
+  }
+    /* ------  CASE 2: the block is NOT completely filled --------- */
+  else {
+    printf("CASE 2\n");
+    /* create next block header */
+    metadata_t *remainBlkHeader = (void *) currBlkHeader + currBlkSize;
+    /* set next block header */
+    remainBlkHeader->size = currBlkHeader->size - currBlkSize;
+    metadata_t *remainBlkFreeList = findCorrectFreeList(remainBlkHeader->size);
+
+    if (freelist != remainBlkFreeList) {
+//        the remaining block is no longer belongs to the current free list
+//        so we need to assign this block to a different free list, which is
+//        remainBlkFreeList, and we also need to remove the current block from
+//        the current free list
+      if (currBlkHeader->prev != NULL)
+        currBlkHeader->prev->next = currBlkHeader->next;
+      if (currBlkHeader->next != NULL)
+        currBlkHeader->next->prev = currBlkHeader->prev;
+
+      if (remainBlkFreeList == NULL) {
+//          if this remainBlkFreeList is NULL, then this is an empty list, and
+//          all we need is to make remainBlkFreeList equal to remainBlkHeader
+        assignCorrectFreeList(remainBlkHeader, remainBlkHeader);
+        remainBlkHeader->next = NULL;
+        remainBlkHeader->prev = NULL;
+      } else {
+        ptr = remainBlkFreeList;
+        if (ptr > remainBlkHeader) {
+//            the start of the free list is already after remainBlkHeader
+//            remainBlkHeader will be the first block
+          remainBlkHeader->next = ptr;
+          ptr->prev = remainBlkHeader;
+          remainBlkHeader->prev = NULL;
+        } else {
+//          go to a block that's right after remainBlkHeader
+//          or, in the case where remainBlkHeader is the last block, go to the
+//          block just before it
+          while (ptr < remainBlkHeader) {
+            if (ptr->next != NULL) {
+              ptr = ptr->next;
+            } else {
+              break;
+            }
+          }
+          if (ptr > remainBlkHeader) {
+//            ptr is a block that's right after remainBlkHeader
+            ptr->prev->next = remainBlkHeader;
+            remainBlkHeader->prev = ptr->prev;
+            remainBlkHeader->next = ptr;
+            ptr->prev = remainBlkHeader;
+          } else {
+//              remainBlkHeader is the last block
+            ptr->next = remainBlkHeader;
+            remainBlkHeader->prev = ptr;
+            remainBlkHeader->next = NULL;
+          }
+        }
+      }
+    } else {
+//        the remaining block still fits in the free list, this is easier
+      remainBlkHeader->next = currBlkHeader->next;
+      remainBlkHeader->prev = currBlkHeader->prev;
+      if (remainBlkHeader->next != NULL)
+        remainBlkHeader->next->prev = remainBlkHeader;
+      if (remainBlkHeader->prev != NULL) {
+        remainBlkHeader->prev->next = remainBlkHeader;
+      } else {
+        assignCorrectFreeList(remainBlkHeader, remainBlkHeader);
+      }
+    }
+
+    /* set next block footer */
+    metadata_f *nextBlkFtr =
+        (void *) remainBlkHeader + remainBlkHeader->size - METADATA_F_ALIGNED;
+    nextBlkFtr->size = remainBlkHeader->size;
+    /* create current block footer */
+    metadata_f *currBlkFtr = (void *) remainBlkHeader - METADATA_F_ALIGNED;
+    /* set current block footer */
+    currBlkFtr->size = currBlkSize;
+    /* set current block header */
+    currBlkHeader->size = currBlkSize;
+    currBlkHeader->next = NULL;
+    currBlkHeader->prev = NULL;
+  }
+
+  /* return the correct pointer address */
+  return (void *) currBlkHeader + METADATA_T_ALIGNED;
 }
 
 void dfree(void *ptr) {
   /* your code here */
-  metadata_t *freePointer = (void *) ptr - METADATA_T_ALIGNED;
+  metadata_t *currBlkHeader = (void *) ptr - METADATA_T_ALIGNED;
+  printf("CUREENT BLOCK SIZE: %zd\n", currBlkHeader->size);
+  printf("1\n");
+  freelist = findCorrectFreeList(currBlkHeader->size);
 
-  /* CHECK IF HEAP IS COMPLETELY FILLED, IF YES, HEAP WILL NOT BE FULL ANYMORE*/
-  if (heapIsCompletelyFull) {
-    heapIsCompletelyFull = false;
-    freelist = freePointer;
-    freelist->next = NULL;
-    freelist->prev = NULL;
+  if (freelist == NULL) {
+    assignCorrectFreeList(currBlkHeader, currBlkHeader);
+  } else if (currBlkHeader < freelist) {
+    printf("currBlkHeader is before freelist\n");
+    if ((void *) currBlkHeader + currBlkHeader->size == (void *) freelist) {
+      /* merge needed */
+      /* set freePointer header */
+      currBlkHeader->size += freelist->size;
+      currBlkHeader->next = freelist->next;
+      currBlkHeader->prev = NULL;
+
+      if (freelist->next != NULL)
+        freelist->next->prev = currBlkHeader;
+
+      /* modify freelist header */
+      freelist->next = NULL;
+      freelist->prev = NULL;
+      /* set merged footer */
+      metadata_f *mergedFooter =
+          (void *) currBlkHeader + currBlkHeader->size - METADATA_F_ALIGNED;
+      mergedFooter->size = currBlkHeader->size;
+      /* adjust freelist */
+      assignCorrectFreeList(freelist, currBlkHeader);
+    } else {
+      /* merge NOT needed */
+      /* set freePointer header */
+      currBlkHeader->next = freelist;
+      freelist->prev = currBlkHeader;
+      currBlkHeader->prev = NULL;
+      /* adjust freelist */
+      assignCorrectFreeList(currBlkHeader, currBlkHeader);
+    }
   } else {
-    if (freePointer < freelist) {
-      if ((void *) freePointer + freePointer->size == (void *) freelist) {
-        /* set freePointer header */
-        freePointer->size += freelist->size;
-        freePointer->next = freelist->next;
+    printf("currBlkHeader is after freelist\n");
+    /* find the blocks between which freePointer lies */
+    metadata_t *ptr = freelist;
 
-        if (freelist->next != NULL) {
-          freelist->next->prev = freePointer;
-        }
+    /* if this is not the last free block and the next free block is before the freeing block: */
+    while (ptr->next != NULL && ptr->next < currBlkHeader) {
+      ptr = ptr->next;
+    }
 
-        /* modify freelist header */
-        freelist->next = NULL;
-        freelist->prev = NULL;
-        /* set merged footer */
-        metadata_f *mergedFooter2AA =
-            (void *) freePointer + freePointer->size - METADATA_F_ALIGNED;
-        mergedFooter2AA->size = freePointer->size;
-        /* adjust freelist */
-        freelist = freePointer;
+    if (ptr->next == NULL) {
+      /*if the previous block is free */
+      if ((void *) ptr + ptr->size == (void *) currBlkHeader) {
+        /* update merged header */
+        ptr->size += currBlkHeader->size;
+        /* update footer */
+        metadata_f *mergedFtr = (void *) ptr + ptr->size - METADATA_F_ALIGNED;
+        mergedFtr->size = ptr->size;
       } else {
-        /* set freePointer header */
-        freePointer->next = freelist;
-        freelist->prev = freePointer;
-        freePointer->prev = NULL;
-        /* adjust freelist */
-        freelist = freePointer;
+        /*if the previous block is allocated */
+        /* create next and prev pointers to add the block to freelist */
+        currBlkHeader->prev = ptr;
+        ptr->next = currBlkHeader;
+        currBlkHeader->next = NULL;
       }
     } else {
-      /* find the blocks between which freePointer lies */
-      metadata_t *previousFreePointer = freelist;
+      /*if it is in the middle: */
+      metadata_t *nextFreePointer = ptr->next;
+      bool previousBlockIsFree =
+          (void *) currBlkHeader == (void *) ptr + ptr->size ? true : false;
+      bool nextBlockIsFree = (void *) currBlkHeader + currBlkHeader->size
+                                 == (void *) nextFreePointer ? true : false;
+      int CASE;
 
-      /* if this is not the last free block and the next free block is before the freeing block: */
-      while (previousFreePointer->next != NULL
-          && previousFreePointer->next < freePointer) {
-        previousFreePointer = previousFreePointer->next;
+      if (previousBlockIsFree && nextBlockIsFree) {
+        CASE = 1;
+      } else if (previousBlockIsFree && !nextBlockIsFree) {
+        CASE = 2;
+      } else if (!previousBlockIsFree && nextBlockIsFree) {
+        CASE = 3;
+      } else {
+        CASE = 4;
       }
+      metadata_f *newFtr;
+      switch (CASE) {
+        case 1:
+          /* realign pointers */
+          if (nextFreePointer->next != NULL) {
+            /* if next free pointer is not the last free block */
+            ptr->next = nextFreePointer->next;
+            ptr->next->prev = ptr;
+          } else {
+            /* if next free pointer IS the last free block */
+            ptr->next = NULL;
+          }
 
-      if (previousFreePointer->next == NULL) {
+          nextFreePointer->prev = NULL;
+          nextFreePointer->next = NULL;
+          currBlkHeader->prev = NULL;
+          currBlkHeader->next = NULL;
+          /* adjust size in header */
+          ptr->size += currBlkHeader->size + nextFreePointer->size;
+          /* adjust size in new footer */
+          newFtr = (void *) nextFreePointer + nextFreePointer->size
+              - METADATA_F_ALIGNED;
+          newFtr->size = ptr->size;
+          break;
 
-        /*if the previous block is free */
-        if ((void *) previousFreePointer + previousFreePointer->size
-            == (void *) freePointer) {
-          /* update merged header */
-          previousFreePointer->size += freePointer->size;
-          /* update footer */
-          metadata_f *mergedFooterF_B_A_A =
-              (void *) previousFreePointer + previousFreePointer->size
-                  - METADATA_F_ALIGNED;
-          mergedFooterF_B_A_A->size = previousFreePointer->size;
-        }
-          /*if the previous block is allocated */
-        else {
-          /* create next and prev pointers to add the block to freelist */
-          freePointer->prev = previousFreePointer;
-          previousFreePointer->next = freePointer;
-          freePointer->next = NULL;
-        }
-      }
-        /*if it is in the middle: */
-      else {
-        metadata_t *nextFreePointer = previousFreePointer->next;
-        bool previousBlockIsFree = ((void *) freePointer
-            == (void *) previousFreePointer + previousFreePointer->size) ? true
-                                                                         : false;
-        bool nextBlockIsFree = ((void *) freePointer + freePointer->size
-            == (void *) nextFreePointer) ? true : false;
-        int CASE;
+        case 2:
+          /* adjust size in header */
+          ptr->size += currBlkHeader->size;
+          /* adjust size in new footer */
+          newFtr = (void *) ptr + ptr->size - METADATA_F_ALIGNED;
+          newFtr->size = ptr->size;
+          currBlkHeader->prev = NULL;
+          currBlkHeader->next = NULL;
+          break;
 
-        if (previousBlockIsFree && nextBlockIsFree) {
-          CASE = 1;
-        } else if (previousBlockIsFree && !nextBlockIsFree) {
-          CASE = 2;
-        } else if (!previousBlockIsFree && nextBlockIsFree) {
-          CASE = 3;
-        } else {
-          CASE = 4;
-        }
+        case 3:
+          /* realign pointers */
+          ptr->next = currBlkHeader;
+          currBlkHeader->prev = ptr;
+          currBlkHeader->next = nextFreePointer->next;
 
-        switch (CASE) {
-          case 1:
+          if (nextFreePointer->next != NULL) {
+            nextFreePointer->next->prev = currBlkHeader;
+          }
 
+          nextFreePointer->prev = NULL;
+          nextFreePointer->next = NULL;
+          /* adjust size in new header */
+          currBlkHeader->size += nextFreePointer->size;
+          /* adjust size in footer */
+          newFtr = (void *) nextFreePointer + nextFreePointer->size
+              - METADATA_F_ALIGNED;
+          newFtr->size = currBlkHeader->size;
+          break;
 
-            /* realign pointers */
-            if (nextFreePointer->next != NULL) {
-              /* if next free pointer is not the last free block */
-              previousFreePointer->next = nextFreePointer->next;
-              nextFreePointer->next->prev = previousFreePointer;
-            } else {
-              /* if next free pointer IS the last free block */
-              previousFreePointer->next = NULL;
-            }
-
-            nextFreePointer->prev = NULL;
-            nextFreePointer->next = NULL;
-            freePointer->prev = NULL;
-            freePointer->next = NULL;
-            /* adjust size in header */
-            previousFreePointer->size +=
-                freePointer->size + nextFreePointer->size;
-            /* adjust size in new footer */
-            metadata_f *newFooterF_B_B_1 =
-                (void *) nextFreePointer + nextFreePointer->size
-                    - METADATA_F_ALIGNED;
-            newFooterF_B_B_1->size = previousFreePointer->size;
-            break;
-
-          case 2:
-            /* adjust size in header */
-            previousFreePointer->size += freePointer->size;
-            /* adjust size in new footer */
-            metadata_f *newFooterf_B_B_2 =
-                (void *) previousFreePointer + previousFreePointer->size
-                    - METADATA_F_ALIGNED;
-            newFooterf_B_B_2->size = previousFreePointer->size;
-            break;
-
-          case 3:
-            /* realign pointers */
-            previousFreePointer->next = freePointer;
-            freePointer->prev = previousFreePointer;
-            freePointer->next = nextFreePointer->next;
-
-            if (nextFreePointer->next != NULL) {
-              nextFreePointer->next->prev = freePointer;
-            }
-
-            nextFreePointer->prev = NULL;
-            nextFreePointer->next = NULL;
-            /* adjust size in new header */
-            freePointer->size += nextFreePointer->size;
-            /* adjust size in footer */
-            metadata_f *newFooterF_B_B_3 =
-                (void *) nextFreePointer + nextFreePointer->size
-                    - METADATA_F_ALIGNED;
-            newFooterF_B_B_3->size = freePointer->size;
-            break;
-
-          case 4:
-            /* realign pointers */
-            previousFreePointer->next = freePointer;
-            freePointer->prev = previousFreePointer;
-            freePointer->next = nextFreePointer;
-            nextFreePointer->prev = freePointer;
-            break;
-        }
+        case 4:
+          /* realign pointers */
+          ptr->next = currBlkHeader;
+          currBlkHeader->prev = ptr;
+          currBlkHeader->next = nextFreePointer;
+          nextFreePointer->prev = currBlkHeader;
+          break;
       }
     }
   }
@@ -384,8 +411,6 @@ bool dmalloc_init() {
   /* Q: Why casting is used? i.e., why (void*)-1?  WHY? */
   if (freelist == (void *) -1)
     return false;
-  printf("METADATA_F_ALIGNED: %zd\n", METADATA_F_ALIGNED);
-  printf("METADATA_T_ALIGNED: %zd\n", METADATA_T_ALIGNED);
   /*setting heap_start*/
   heap_start = freelist;
   heap_start->next = NULL;
@@ -414,24 +439,42 @@ void print_freelist() {
   DEBUG("\n");
 }
 
-void *findCorrectFreeList(size_t numbytes) {
-  if (numbytes <= 64) {
+void *findCorrectFreeList(size_t size) {
+  if (size <= 64) {
+    printf("FOUND freelist32_64: %d\n",
+           freelist32_64 != NULL ? freelist32_64 : -1);
     return freelist32_64;
-  } else if (numbytes <= 128) {
+  } else if (size <= 128) {
+    printf("FOUND freelist64_128: %d\n",
+           freelist64_128 != NULL ? freelist64_128 : -1);
     return freelist64_128;
-  } else if (numbytes <= 256) {
+  } else if (size <= 256) {
+    printf("FOUND freelist128_256: %d\n",
+           freelist128_256 != NULL ? freelist128_256 : -1);
     return freelist128_256;
-  } else if (numbytes <= 512) {
+  } else if (size <= 512) {
+    printf("FOUND freelist256_512: %d\n",
+           freelist256_512 != NULL ? freelist256_512 : -1);
     return freelist256_512;
-  } else if (numbytes <= 1024) {
+  } else if (size <= 1024) {
+    printf("FOUND freelist512_1024: %d\n",
+           freelist512_1024 != NULL ? freelist512_1024 : -1);
     return freelist512_1024;
-  } else if (numbytes <= 2048) {
+  } else if (size <= 2048) {
+    printf("FOUND freelist1024_2048: %d\n",
+           freelist1024_2048 != NULL ? freelist1024_2048 : -1);
     return freelist1024_2048;
-  } else if (numbytes <= 4096) {
+  } else if (size <= 4096) {
+    printf("FOUND freelist2048_4096: %d\n",
+           freelist2048_4096 != NULL ? freelist2048_4096 : -1);
     return freelist2048_4096;
-  } else if (numbytes <= 8192) {
+  } else if (size <= 8192) {
+    printf("FOUND freelist4096_8192: %d\n",
+           freelist4096_8192 != NULL ? freelist4096_8192 : -1);
     return freelist4096_8192;
   } else {
+    printf("FOUND freelist8192_: %d\n",
+           freelist8192_ != NULL ? freelist8192_ : -1);
     return freelist8192_;
   }
 }

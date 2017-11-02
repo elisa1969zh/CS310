@@ -23,14 +23,12 @@ static ucontext_t *LIBINIT_THREAD;
 
 static int thread_libinit_called = 0;
 
-static std::deque<ucontext_t *>
-    READY_QUEUE;                                                             // READY QUEUE
-static std::map <pair<unsigned int, unsigned int>, deque<ucontext_t *> >
-    MAP_OF_WAIT_QUEUE;               // WAIT QUEUES
+static std::deque<ucontext_t *> READY_QUEUE; // READY QUEUE
+static std::map <pair<unsigned int, unsigned int>, deque<ucontext_t *>>
+    MAP_OF_WAIT_QUEUE; // WAIT QUEUES
 static std::map<unsigned int, deque<ucontext_t *> >
-    MAP_OF_LOCK_QUEUE;                                   // LOCK QUEUES
-static std::map<unsigned int, ucontext_t *>
-    MAP_OF_LOCK_OWNER;                                           // QUEUE OWNERS
+    MAP_OF_LOCK_QUEUE; // LOCK QUEUES
+static std::map<unsigned int, ucontext_t *> MAP_OF_LOCK_OWNER; // QUEUE OWNERS
 static std::map<unsigned int, unsigned int> COND_LOCK_UNIQUE;
 
 static std::map<ucontext_t *, bool> IN_WAIT_OR_NOT;
@@ -41,33 +39,29 @@ static std::map<ucontext_t *, bool> IS_BLOCKED;
 static bool interruptsEnabled = true;
 static int TOTAL_NUM_OF_THREADS = 0;
 
-static void INTERRUPT_ENABLE() {                                                                               // simple helper method
-  while (interruptsEnabled == false) {
-    interruptsEnabled =
-        true;                                                                           // ORDER MATTERS
+static void INTERRUPT_ENABLE() { // simple helper method
+  while (!interruptsEnabled) {
+    interruptsEnabled = true; // ORDER MATTERS
     interrupt_enable();
   }
 
   // assert_interrupts_enabled();
 }
 
-static void INTERRUPT_DISABLE() {                                                                              // simple helper method
-  while (interruptsEnabled == true) {
+static void INTERRUPT_DISABLE() { // simple helper method
+  while (interruptsEnabled) {
     interrupt_disable();
-    interruptsEnabled =
-        false;                                                                      // ORDER MATTERS
+    interruptsEnabled = false; // ORDER MATTERS
   }
 
   // assert_interrupts_disabled();
 }
 
-static void print_all_three_queues_and_info(void) {
-  // PRINT READY QUEUE
+static void print_all_three_queues_and_info(void) { // PRINT READY QUEUE
   printf("Ready Queue Size: %lu: [", READY_QUEUE.size());
 
   for (int i = 0; i < READY_QUEUE.size(); i++) {
-    printf("%p ",
-           READY_QUEUE[i]);
+    printf("%p ", READY_QUEUE[i]);
   }
 
   printf("]\n");
@@ -75,8 +69,8 @@ static void print_all_three_queues_and_info(void) {
   // PRINT LOCK QUEUE
   printf("Lock Queue Size: %lu: [", MAP_OF_LOCK_QUEUE.size());
 
-  for (std::map < unsigned int, deque < ucontext_t * > > ::iterator i =
-                                                                        MAP_OF_LOCK_QUEUE.begin();
+  for (std::map < unsigned int, deque < ucontext_t * >> ::iterator i =
+                                                                       MAP_OF_LOCK_QUEUE.begin();
   i != MAP_OF_LOCK_QUEUE.end();
   i++) {
     std::cout << i->first << " => [";
@@ -93,8 +87,9 @@ static void print_all_three_queues_and_info(void) {
   // PRINT WAIT QUEUE
   printf("Wait Queue Size: %lu: [", MAP_OF_WAIT_QUEUE.size());
 
-  for (std::map < pair < unsigned int, unsigned int > , deque < ucontext_t * >
-      > ::iterator i = MAP_OF_WAIT_QUEUE.begin();
+  for (std::map <pair<unsigned int, unsigned int>, deque<ucontext_t *>>
+      ::iterator
+  i = MAP_OF_WAIT_QUEUE.begin();
   i != MAP_OF_WAIT_QUEUE.end();
   i++) {
     std::cout << "(" << i->first.first << ", " << i->first.second << ")"
@@ -151,14 +146,14 @@ static int SWITCH(bool THREAD_EXIT_OR_NOT) {
 
   //print_all_three_queues_and_info();
 
-  if (!READY_QUEUE.empty()) {                                                          // if (got thread)
+  if (!READY_QUEUE.empty()) { // if (got thread)
 
     ucontext_t *NEXT_THREAD =
-        READY_QUEUE.front();                                     // pick a thread TCB from ready list;
+        READY_QUEUE.front(); // pick a thread TCB from ready list;
     ucontext_t *OLD_THREAD = CURRENT_RUNNING_THREAD;
 
     CURRENT_RUNNING_THREAD = NEXT_THREAD;
-    READY_QUEUE.pop_front();                                                              // remove next thread from ready queue;
+    READY_QUEUE.pop_front(); // remove next thread from ready queue;
 
     if (THREAD_EXIT_OR_NOT == true) {
       THREAD_TO_DELETE = OLD_THREAD;
@@ -173,13 +168,13 @@ static int SWITCH(bool THREAD_EXIT_OR_NOT) {
     if (THREAD_EXIT_OR_NOT == true) {
       //exiting a thread when the ready queue is empty
       // exit program
-      INTERRUPT_ENABLE();                                                                             /*need to discuss about this*/
+      INTERRUPT_ENABLE(); /*need to discuss about this*/
       cout << "Thread library exiting.\n";
       exit(0);
     } else {
       if (IS_BLOCKED[CURRENT_RUNNING_THREAD]) {
         // if current_running_thread is busy
-        INTERRUPT_ENABLE();                                                                             /*need to discuss about this*/
+        INTERRUPT_ENABLE(); /*need to discuss about this*/
         cout << "Thread library exiting.\n";
         exit(0);
       }
@@ -199,8 +194,7 @@ static int context_creation(ucontext_t *thread) {
 
   try {
     char *stack = new char[STACK_SIZE];
-    thread->uc_stack.ss_sp =
-        stack;                                                            // Allocate a new stack
+    thread->uc_stack.ss_sp = stack; // Allocate a new stack
     thread->uc_stack.ss_size = STACK_SIZE;
     thread->uc_stack.ss_flags = 0;
     thread->uc_link = NULL;
@@ -308,7 +302,7 @@ int thread_create(thread_startfunc_t func, void *arg) {
 
     makecontext(thread, (void (*)()) STUB, 2, func, arg);
 
-    READY_QUEUE.push_back(thread);                                                                  // Add thread to ready queue
+    READY_QUEUE.push_back(thread); // Add thread to ready queue
 
     if (thread == NULL) {
       INTERRUPT_ENABLE();
@@ -326,7 +320,7 @@ int thread_create(thread_startfunc_t func, void *arg) {
 }
 
 int thread_yield(void) {
-  // printf("----/*/**/*/------------thread_yield------------\n");
+// printf("----/*/**/*/------------thread_yield------------\n");
   INTERRUPT_DISABLE();
 
   if (thread_libinit_called == 0) {
@@ -334,7 +328,7 @@ int thread_yield(void) {
     return -1;
   }
 
-  READY_QUEUE.push_back(CURRENT_RUNNING_THREAD);                                              // put my TCB on ready list
+  READY_QUEUE.push_back(CURRENT_RUNNING_THREAD); // put my TCB on ready list
 
   if (SWITCH(false) == -1) {
     INTERRUPT_ENABLE();
@@ -348,22 +342,22 @@ int thread_yield(void) {
 int thread_lock(unsigned int lock) {
   INTERRUPT_DISABLE();
 
-  if ((thread_libinit_called == 0) || (MAP_OF_LOCK_OWNER[lock]
-      == CURRENT_RUNNING_THREAD)) {
+  if ((thread_libinit_called == 0)
+      || (MAP_OF_LOCK_OWNER[lock] == CURRENT_RUNNING_THREAD)) {
     INTERRUPT_ENABLE();
     return -1;
   }
 
-  while (MAP_OF_LOCK_QUEUE.count(lock)
-      == 0) {                                                    // it's a new lock
+  while (MAP_OF_LOCK_QUEUE.count(lock) == 0) { // it's a new lock
     std::deque < ucontext_t * > LOCK_QUEUE;
     MAP_OF_LOCK_QUEUE[lock] = LOCK_QUEUE;
     MAP_OF_LOCK_OWNER[lock] = NULL;
   }
 
   while ((MAP_OF_LOCK_OWNER[lock] != NULL) && (MAP_OF_LOCK_OWNER[lock]
-      != CURRENT_RUNNING_THREAD)) {  // while (this monitor is not free) {
-    MAP_OF_LOCK_QUEUE[lock].push_back(CURRENT_RUNNING_THREAD);                                  // put my TCB on this monitor lock list;
+      != CURRENT_RUNNING_THREAD)) { // while (this monitor is not free) {
+    // put my TCB on this monitor lock list;
+    MAP_OF_LOCK_QUEUE[lock].push_back(CURRENT_RUNNING_THREAD);
     IS_BLOCKED[CURRENT_RUNNING_THREAD] = true;
 
     if (SWITCH(false) == -1) {
@@ -392,16 +386,14 @@ int thread_unlock(unsigned int lock) {
     return -1;
   }
 
-  MAP_OF_LOCK_OWNER[lock] =
-      NULL;                                                         // set this monitor free;
+  MAP_OF_LOCK_OWNER[lock] = NULL; // set this monitor free;
 
-  if (!MAP_OF_LOCK_QUEUE[lock].empty()) {                                               // if there are threads on the lock queue
-    READY_QUEUE.push_back(MAP_OF_LOCK_QUEUE[lock].front());    // put a waiter TCB on ready list;
-    IS_BLOCKED[MAP_OF_LOCK_QUEUE[lock].front()] =
-        false;               // unblock the thread
+  if (!MAP_OF_LOCK_QUEUE[lock].empty()) { // if there are threads on the lock queue
+    READY_QUEUE.push_back(MAP_OF_LOCK_QUEUE[lock].front()); // put a waiter TCB on ready list;
+    IS_BLOCKED[MAP_OF_LOCK_QUEUE[lock].front()] = false; // unblock the thread
 
     MAP_OF_LOCK_OWNER[lock] = MAP_OF_LOCK_QUEUE[lock].front();
-    MAP_OF_LOCK_QUEUE[lock].pop_front();                                                // get waiter TCB off this monitor lock list;
+    MAP_OF_LOCK_QUEUE[lock].pop_front(); // get waiter TCB off this monitor lock list;
   }
 
   if (!IN_WAIT_OR_NOT[CURRENT_RUNNING_THREAD]) { INTERRUPT_ENABLE(); }
@@ -437,8 +429,8 @@ int thread_wait(unsigned int lock, unsigned int cond) {
   }
 
   MAP_OF_WAIT_QUEUE[LOCK_COND_PAIR].push_back(CURRENT_RUNNING_THREAD);
-  IS_BLOCKED[CURRENT_RUNNING_THREAD] =
-      true;               // unblock the thread                   // put my TCB on this monitor wait list;
+  IS_BLOCKED[CURRENT_RUNNING_THREAD] = true;  // unblock the thread
+  // put my TCB on this monitor wait list;
 
   if (SWITCH(false) == -1) {
     INTERRUPT_ENABLE();
@@ -448,7 +440,7 @@ int thread_wait(unsigned int lock, unsigned int cond) {
   if (thread_lock(lock) == -1) {
     INTERRUPT_ENABLE();
     return -1;
-  }                                               // lock();
+  }  // lock();
 
   IN_WAIT_OR_NOT[CURRENT_RUNNING_THREAD] = false;
 
@@ -471,10 +463,10 @@ int thread_signal(unsigned int lock, unsigned int cond) {
   std::pair<unsigned int, unsigned int> LOCK_COND_PAIR(lock, cond);
 
   if (!MAP_OF_WAIT_QUEUE[LOCK_COND_PAIR].empty()) {
-    READY_QUEUE.push_back(MAP_OF_WAIT_QUEUE[LOCK_COND_PAIR].front());                   // put a waiter TCB on ready list;
+    READY_QUEUE.push_back(MAP_OF_WAIT_QUEUE[LOCK_COND_PAIR].front()); // put a waiter TCB on ready list;
     IS_BLOCKED[MAP_OF_WAIT_QUEUE[LOCK_COND_PAIR].front()] =
-        false;               // unblock the thread
-    MAP_OF_WAIT_QUEUE[LOCK_COND_PAIR].pop_front();                                      // get waiter TCB off this monitor wait list
+        false; // unblock the thread
+    MAP_OF_WAIT_QUEUE[LOCK_COND_PAIR].pop_front(); // get waiter TCB off this monitor wait list
   }
 
   if (!IN_BROADCAST_OR_NOT[CURRENT_RUNNING_THREAD]) { INTERRUPT_ENABLE(); }
@@ -498,7 +490,8 @@ int thread_broadcast(unsigned int lock, unsigned int cond) {
 
   std::pair<unsigned int, unsigned int> LOCK_COND_PAIR(lock, cond);
 
-  while (!MAP_OF_WAIT_QUEUE[LOCK_COND_PAIR].empty()) {                                     // repeat thread_signal for however many threads on wait queue
+  while (!MAP_OF_WAIT_QUEUE[LOCK_COND_PAIR].empty()) {
+    // repeat thread_signal for however many threads on wait queue
     if (thread_signal(lock, cond) == -1) {
       INTERRUPT_ENABLE();
       return -1;
